@@ -1,0 +1,65 @@
+services:
+  postgres:
+    build:
+      context: ./postgres
+    container_name: postgres_pgvector
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: mydatabase
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db-init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "myuser", "-d", "mydatabase"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  
+  streamlit:
+    build:
+      context: ./streamlit
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./streamlit:/app
+
+  django:
+    build:
+      context: ./articlegenerator
+    container_name: django
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      DJANGO_SETTINGS_MODULE: articlegenerator.settings
+    volumes:
+      - ./articlegenerator:/app
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py runserver 0.0.0.0:8000"
+
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+
+  celery:
+    build:
+      context: ./articlegenerator
+    command: celery -A articlegenerator worker --loglevel=info
+    depends_on:
+      - redis
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+
+volumes:
+  postgres_data:
+
+
+
